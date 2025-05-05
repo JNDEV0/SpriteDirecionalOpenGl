@@ -1,0 +1,87 @@
+# Prerequisites
+*.vsconfig
+
+# User-specific files
+*.rsuser
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# Build results
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]elease/
+[Rr]eleases/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+
+# Visual Studio cache files
+.vs/
+# Uncomment if you have tasks that create the project's static files in wwwroot
+#wwwroot/
+
+# Specifies git should ignore directories containing Visual Studio Test Window artifacts
+*_i.dll
+*_p.pdb
+
+# Rider directories
+.idea/
+
+# Tooling
+_UpgradeReport_Files/
+Backup*/
+UpgradeLog*.htm
+UpgradeLog*.xml
+*.psess
+*.vsp
+*.vspx
+*.sap
+
+# Referenced DLLs
+*.dll
+*.pdb
+
+# NuGet Packages
+*.nupkg
+# The packages folder can be ignored because of Package Restore
+**/[Pp]ackages/*
+# except build/, which is used as an MSBuild target.
+!**/[Pp]ackages/build/
+# Uncomment if necessary however generally it will be regenerated when needed
+#!**/[Pp]ackages/repositories.config
+# NuGet v3's project.json cache
+project.lock.json
+project.assets.json
+
+# Output files from JetBrains Rider
+*/ReSharperUserFile.*
+
+# Windows thumbnail cache files
+Thumbs.db
+ehthumbs.db
+ehthumbs_vista.db
+
+# Dump files
+*.stackdump
+
+# Folder containing Mac OS X resource forks
+__MACOSX
+
+# macOS specific files
+*.DS_Store
+.AppleDouble
+.LSOverride
+
+# Linux specific files
+*~
+
+# Texture folder (if you want to keep it out of git, though you likely WANT it)
+# Textures/
