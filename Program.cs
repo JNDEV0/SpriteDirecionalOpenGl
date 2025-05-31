@@ -60,13 +60,45 @@ namespace App
         private static float offsetT = 0.0f;
 
         private static Vector2 characterPosition = Vector2.Zero;
-        private const float CharacterSpeed = 1.5f;
+        private const float CharacterSpeed = 1.5f; // Will be replaced by tile-based movement
         private const float CharacterScale = 0.2f;
 
         private static Stopwatch _timer = new Stopwatch();
         private static double _timeSinceLastFrame = 0.0;
         private const double AnimationFps = 12.0;
         private const double TimePerFrame = 1.0 / AnimationFps;
+
+        // Grid and Tile Settings
+        private static int _tileVao;
+        private static int _tileVbo;
+        private static int _waterTextureId;
+        private static int _grassTextureId;
+        private static int _dirtTextureId;
+        private static int _beachTextureId;
+        private const int GridSize = 5;
+        private const float TileScale = 0.2f;
+        private const float IsometricYProjectionFactor = 0.8f; // User adjusted value for flatness
+
+        private static readonly string[,] TileLayout = new string[GridSize, GridSize]
+        {
+            { "water", "water", "beach", "grass", "grass" },
+            { "water", "beach", "grass", "grass", "dirt" },
+            { "beach", "grass", "grass", "dirt", "dirt" },
+            { "grass", "grass", "dirt", "dirt", "water" },
+            { "grass", "dirt", "dirt", "water", "water" }
+        };
+
+        // Character grid position
+        private static int _characterGridR; // Row
+        private static int _characterGridC; // Column
+
+        // Movement timing and input latching
+        private static double _timeSinceLastMove = 0.0;
+        private const double MoveCooldown = 1; // User set to 1 second
+        private static int _intended_dr_grid = 0;
+        private static int _intended_dc_grid = 0;
+        private static int _intendedAnimationTarget = 0;
+        private static bool _hasIntendedMove = false;
 
         static void Main()
         {
@@ -119,6 +151,68 @@ namespace App
             return vao;
         }
 
+        private static int CreateTileQuad()
+        {
+            float[] vertices = {
+                // Positions          Texture Coords
+                -0.5f,  0.25f, 0.0f,  0.0f, 1.0f, // Top-Center
+                 0.0f,  0.5f,  0.0f,  0.5f, 0.0f, // Right-Center
+                 0.5f,  0.25f, 0.0f,  1.0f, 1.0f, // Bottom-Center
+                 0.0f,  0.0f,  0.0f,  0.5f, 1.0f  // Left-Center
+            };
+            // Convert diamond to quad for texturing
+            // For simplicity, we'll use a simple quad that fits the diamond for now
+            // Adjust texture coordinates if needed for diamond shape
+             float[] quadVertices = {
+                // Positions          Texture Coords
+                -0.5f,  0.5f, 0.0f,   0.0f, 1.0f, // Top-left
+                -0.5f, -0.5f, 0.0f,   0.0f, 0.0f, // Bottom-left
+                 0.5f, -0.5f, 0.0f,   1.0f, 0.0f, // Bottom-right
+
+                -0.5f,  0.5f, 0.0f,   0.0f, 1.0f, // Top-left
+                 0.5f, -0.5f, 0.0f,   1.0f, 0.0f, // Bottom-right
+                 0.5f,  0.5f, 0.0f,   1.0f, 1.0f  // Top-right
+            };
+
+
+            int vao = GL.GenVertexArray();
+            GL.BindVertexArray(vao);
+
+            _tileVbo = GL.GenBuffer();
+            GL.BindBuffer(BufferTarget.ArrayBuffer, _tileVbo);
+            GL.BufferData(BufferTarget.ArrayBuffer, quadVertices.Length * sizeof(float), quadVertices, BufferUsageHint.StaticDraw);
+
+            int stride = 5 * sizeof(float);
+            GL.VertexAttribPointer(0, 3, VertexAttribPointerType.Float, false, stride, 0);
+            GL.EnableVertexAttribArray(0);
+            GL.VertexAttribPointer(1, 2, VertexAttribPointerType.Float, false, stride, 3 * sizeof(float));
+            GL.EnableVertexAttribArray(1);
+
+            GL.BindBuffer(BufferTarget.ArrayBuffer, 0);
+            GL.BindVertexArray(0);
+            return vao;
+        }
+
+        private static Vector2 GetWorldPositionForGridCoordinates(int r, int c)
+        {
+            float tileWidthScreen = TileScale;
+            float effectiveTileHeightForPos = TileScale * IsometricYProjectionFactor;
+
+            int centerRow = GridSize / 2;
+            int centerCol = GridSize / 2;
+            float gridCenterXOffset = (centerCol - centerRow) * tileWidthScreen / 2.0f;
+            float gridCenterYOffset = (centerCol + centerRow) * effectiveTileHeightForPos / 2.0f;
+
+            float s_coord = r + c; // Sum of grid coordinates for Y positioning
+            float isoX_uncorrected = (c - r) * tileWidthScreen / 2.0f;
+            float isoY_uncorrected = s_coord * effectiveTileHeightForPos / 2.0f;
+
+            float finalX = isoX_uncorrected - gridCenterXOffset;
+            float finalY = isoY_uncorrected - gridCenterYOffset;
+
+            return new Vector2(finalX, finalY);
+        }
+
         static void OnLoad()
         {
             GL.ClearColor(0.1f, 0.1f, 0.1f, 1.0f);
@@ -126,16 +220,39 @@ namespace App
             GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
 
             _spriteVao = CreateSpriteQuad();
+            _tileVao = CreateTileQuad(); 
             SetupShaders();
 
             try
             {
                 _spriteTextureId = TextureLoader.LoadTexture(SpriteSheetPath);
+                _waterTextureId = TextureLoader.LoadTexture("tileset/water.png");
+                _grassTextureId = TextureLoader.LoadTexture("tileset/grass.png");
+                _dirtTextureId = TextureLoader.LoadTexture("tileset/dirt.png");
+                _beachTextureId = TextureLoader.LoadTexture("tileset/beach.png");
+            }
+            catch (FileNotFoundException ex)
+            {
+                Console.WriteLine($"Error loading texture: {ex.Message} Path: {ex.FileName}");
+                _gameWindowRef?.Close();
+                return;
             }
             catch (Exception ex)
             {
+                Console.WriteLine($"An unexpected error occurred during texture loading: {ex.ToString()}");
                 _gameWindowRef?.Close();
+                return;
             }
+
+            // Initialize character grid position to the center
+            _characterGridR = GridSize / 2;
+            _characterGridC = GridSize / 2;
+            characterPosition = GetWorldPositionForGridCoordinates(_characterGridR, _characterGridC);
+            
+            // Start character facing down (idle)
+            currentAnimation = 3; 
+            _intendedAnimationTarget = 3; 
+            currentFrame = 0;
 
             _timer.Start();
         }
@@ -146,13 +263,19 @@ namespace App
 
             GL.BindBuffer(BufferTarget.ArrayBuffer, 0);
             GL.DeleteBuffer(_spriteVbo);
+            GL.DeleteBuffer(_tileVbo); // Delete tile VBO
 
             GL.UseProgram(0);
             GL.DeleteProgram(_shaderProgram);
 
             GL.DeleteTexture(_spriteTextureId);
+            GL.DeleteTexture(_waterTextureId);
+            GL.DeleteTexture(_grassTextureId);
+            GL.DeleteTexture(_dirtTextureId);
+            GL.DeleteTexture(_beachTextureId);
 
             GL.DeleteVertexArray(_spriteVao);
+            GL.DeleteVertexArray(_tileVao); // Delete tile VAO
         }
 
         static void SetupShaders()
@@ -212,6 +335,7 @@ namespace App
         static void OnUpdateFrame(FrameEventArgs args)
         {
             var keyboard = _gameWindowRef.KeyboardState;
+            _timeSinceLastMove += args.Time;
 
             if (keyboard.IsKeyDown(Keys.Escape))
             {
@@ -219,61 +343,88 @@ namespace App
                 return;
             }
 
-            Vector2 moveDirection = Vector2.Zero;
-            bool isMoving = false;
+            int frame_dr_grid = 0; 
+            int frame_dc_grid = 0; 
+            int frame_animationTarget = currentAnimation; 
+            bool frame_inputProcessed = false;
 
-            if (keyboard.IsKeyDown(Keys.W) || keyboard.IsKeyDown(Keys.Up))
-            {
-                moveDirection.Y = 1;
-                currentAnimation = 0;
-                isMoving = true;
-            }
-            if (keyboard.IsKeyDown(Keys.S) || keyboard.IsKeyDown(Keys.Down))
-            {
-                moveDirection.Y = -1;
-                currentAnimation = 3;
-                isMoving = true;
-            }
-            if (keyboard.IsKeyDown(Keys.A) || keyboard.IsKeyDown(Keys.Left))
-            {
-                moveDirection.X = -1;
-                currentAnimation = 2;
-                isMoving = true;
-            }
-            if (keyboard.IsKeyDown(Keys.D) || keyboard.IsKeyDown(Keys.Right))
-            {
-                moveDirection.X = 1;
-                currentAnimation = 1;
-                isMoving = true;
-            }
+            bool keyW = keyboard.IsKeyDown(Keys.W) || keyboard.IsKeyDown(Keys.Up);
+            bool keyS = keyboard.IsKeyDown(Keys.S) || keyboard.IsKeyDown(Keys.Down);
+            bool keyA = keyboard.IsKeyDown(Keys.A) || keyboard.IsKeyDown(Keys.Left);
+            bool keyD = keyboard.IsKeyDown(Keys.D) || keyboard.IsKeyDown(Keys.Right);
 
-            if (moveDirection.LengthSquared > 0)
+            if (keyW && keyA) { frame_inputProcessed = true; frame_dr_grid = 1; frame_dc_grid = 0; frame_animationTarget = 0; }    // Visual UP-LEFT (NW) -> Grid S, Anim N
+            else if (keyW && keyD) { frame_inputProcessed = true; frame_dr_grid = 0; frame_dc_grid = 1; frame_animationTarget = 0; } // Visual UP-RIGHT (NE) -> Grid E, Anim N
+            else if (keyS && keyA) { frame_inputProcessed = true; frame_dr_grid = 0; frame_dc_grid = -1; frame_animationTarget = 3; } // Visual DOWN-LEFT (SW) -> Grid W, Anim S
+            else if (keyS && keyD) { frame_inputProcessed = true; frame_dr_grid = -1; frame_dc_grid = 0; frame_animationTarget = 3; } // Visual DOWN-RIGHT (SE) -> Grid N, Anim S
+            else if (keyW) { frame_inputProcessed = true; frame_dr_grid = 1; frame_dc_grid = 1; frame_animationTarget = 0; }      // Visual PURE UP -> Grid SE, Anim N
+            else if (keyS) { frame_inputProcessed = true; frame_dr_grid = -1; frame_dc_grid = -1; frame_animationTarget = 3; }   // Visual PURE DOWN -> Grid NW, Anim S
+            else if (keyA) { frame_inputProcessed = true; frame_dr_grid = 1; frame_dc_grid = -1; frame_animationTarget = 2; }    // Visual PURE LEFT -> Grid SW, Anim Right (flipped)
+            else if (keyD) { frame_inputProcessed = true; frame_dr_grid = -1; frame_dc_grid = 1; frame_animationTarget = 1; }    // Visual PURE RIGHT -> Grid NE, Anim Left (flipped)
+            
+            if (frame_inputProcessed)
             {
-                 moveDirection.Normalize();
+                _intended_dr_grid = frame_dr_grid;
+                _intended_dc_grid = frame_dc_grid;
+                _intendedAnimationTarget = frame_animationTarget;
+                _hasIntendedMove = true;
+                // currentAnimation will be updated in the animation logic section
             }
+            else
+            {
+                _hasIntendedMove = false; 
+            }
+            
+            bool characterMovedThisFrame = false;
 
-            characterPosition += moveDirection * CharacterSpeed * (float)args.Time;
+            if (_timeSinceLastMove >= MoveCooldown)
+            {
+                if (_hasIntendedMove) 
+                {
+                    int nextR = _characterGridR + _intended_dr_grid;
+                    int nextC = _characterGridC + _intended_dc_grid;
+
+                    if (nextR >= 0 && nextR < GridSize && nextC >= 0 && nextC < GridSize)
+                    {
+                        if (TileLayout[nextR, nextC] != "water")
+                        {
+                            _characterGridR = nextR;
+                            _characterGridC = nextC;
+                            characterPosition = GetWorldPositionForGridCoordinates(_characterGridR, _characterGridC);
+                            characterMovedThisFrame = true; // Critical: set this flag
+                            _timeSinceLastMove = 0.0; 
+                        }
+                    }
+                }
+            }
 
             _timeSinceLastFrame += args.Time;
 
-            if (isMoving && _timeSinceLastFrame >= TimePerFrame)
-            {
-                currentFrame = (currentFrame + 1) % nFrames;
-                _timeSinceLastFrame -= TimePerFrame;
+            if (characterMovedThisFrame) { 
+                currentFrame = 0; 
+                currentAnimation = _intendedAnimationTarget; // Ensure animation matches move direction
             }
-            else if (!isMoving)
-            {
-                currentFrame = 0;
-                _timeSinceLastFrame = 0;
+
+            if (_hasIntendedMove) { 
+                currentAnimation = _intendedAnimationTarget; 
+
+                if (_timeSinceLastMove < MoveCooldown) { 
+                    if (_timeSinceLastFrame >= TimePerFrame) {
+                        currentFrame = (currentFrame + 1) % nFrames;
+                        _timeSinceLastFrame -= TimePerFrame;
+                    }
+                } else {
+                    currentFrame = 0; 
+                }
+            } else { 
+                currentAnimation = 3; 
+                currentFrame = 0;     
             }
 
             offsetS = (float)currentFrame * ds;
-            offsetT = (float)currentAnimation * dt;
-
-            characterPosition.X = MathHelper.Clamp(characterPosition.X, -1.0f + CharacterScale * 0.5f, 1.0f - CharacterScale * 0.5f);
-            characterPosition.Y = MathHelper.Clamp(characterPosition.Y, -1.0f + CharacterScale * 0.5f, 1.0f - CharacterScale * 0.5f);
-
-             _gameWindowRef.Title = $"Pos: ({characterPosition.X:F2}, {characterPosition.Y:F2}) Anim: {currentAnimation} Frame: {currentFrame}";
+            offsetT = (float)currentAnimation * dt; 
+            
+            _gameWindowRef.Title = $"Grid:({_characterGridC},{_characterGridR}) Anim:{currentAnimation} Frame:{currentFrame} Pos:({characterPosition.X:F2},{characterPosition.Y:F2})";
         }
 
         static void OnRenderFrame(FrameEventArgs args)
@@ -281,15 +432,63 @@ namespace App
             GL.Clear(ClearBufferMask.ColorBufferBit);
 
             GL.UseProgram(_shaderProgram);
+
+            GL.BindVertexArray(_tileVao);
+            int posLoc = GL.GetUniformLocation(_shaderProgram, "uPositionOffset");
+            int scaleLoc = GL.GetUniformLocation(_shaderProgram, "uScale");
+            int texOffsetLoc = GL.GetUniformLocation(_shaderProgram, "uTexOffset"); 
+
+            GL.Uniform2(scaleLoc, new Vector2(TileScale, TileScale));
+            GL.Uniform2(texOffsetLoc, Vector2.Zero); 
+
+            float tileWidthScreen = TileScale; 
+            float effectiveTileHeightForPos = TileScale * IsometricYProjectionFactor; // Use the class constant
+
+            int centerRow = GridSize / 2;
+            int centerCol = GridSize / 2;
+            float gridCenterXOffset = (centerCol - centerRow) * tileWidthScreen / 2.0f;
+            float gridCenterYOffset = (centerCol + centerRow) * effectiveTileHeightForPos / 2.0f;
+
+            for (int s = 2 * (GridSize - 1); s >= 0; s--) 
+            {
+                int r_min = Math.Max(0, s - (GridSize - 1));
+                int r_max = Math.Min(GridSize - 1, s);
+
+                for (int r_loop = r_min; r_loop <= r_max; r_loop++) 
+                {
+                    int c_loop = s - r_loop; 
+
+                    float isoX_uncorrected = (c_loop - r_loop) * tileWidthScreen / 2.0f;
+                    float isoY_uncorrected = s * effectiveTileHeightForPos / 2.0f; 
+
+                    float finalX = isoX_uncorrected - gridCenterXOffset;
+                    float finalY = isoY_uncorrected - gridCenterYOffset;
+
+                    GL.Uniform2(posLoc, new Vector2(finalX, finalY));
+
+                    int currentTileTextureId = _dirtTextureId; 
+                    switch (TileLayout[r_loop, c_loop]) 
+                    {
+                        case "water": currentTileTextureId = _waterTextureId; break;
+                        case "grass": currentTileTextureId = _grassTextureId; break;
+                        case "beach": currentTileTextureId = _beachTextureId; break;
+                        case "dirt": currentTileTextureId = _dirtTextureId; break;
+                    }
+                    GL.ActiveTexture(TextureUnit.Texture0);
+                    GL.BindTexture(TextureTarget.Texture2D, currentTileTextureId);
+                    GL.DrawArrays(PrimitiveType.Triangles, 0, 6);
+                }
+            }
+
             GL.BindVertexArray(_spriteVao);
             GL.ActiveTexture(TextureUnit.Texture0);
             GL.BindTexture(TextureTarget.Texture2D, _spriteTextureId);
 
-            int posLoc = GL.GetUniformLocation(_shaderProgram, "uPositionOffset");
-            int scaleLoc = GL.GetUniformLocation(_shaderProgram, "uScale");
-            int texOffsetLoc = GL.GetUniformLocation(_shaderProgram, "uTexOffset");
+            posLoc = GL.GetUniformLocation(_shaderProgram, "uPositionOffset"); 
+            scaleLoc = GL.GetUniformLocation(_shaderProgram, "uScale");
+            texOffsetLoc = GL.GetUniformLocation(_shaderProgram, "uTexOffset");
 
-            GL.Uniform2(posLoc, characterPosition);
+            GL.Uniform2(posLoc, characterPosition); 
             GL.Uniform2(scaleLoc, new Vector2(CharacterScale, CharacterScale));
             GL.Uniform2(texOffsetLoc, new Vector2(offsetS, offsetT));
 
