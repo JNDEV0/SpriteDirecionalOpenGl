@@ -1,6 +1,6 @@
-# SpriteDirecionalOpenGl
+# tileset 15x15 movimento 8 direcoes e Sprite Direcional OpenGl
 
-![Gameplay Demo](Textures/gameplay2.gif?raw=true)
+![Gameplay Demo](Textures/gameplay3.gif?raw=true)
 
 ## Gameplay
 
