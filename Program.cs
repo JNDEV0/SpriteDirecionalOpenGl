@@ -75,18 +75,11 @@ namespace App
         private static int _grassTextureId;
         private static int _dirtTextureId;
         private static int _beachTextureId;
-        private const int GridSize = 5;
+        private const int GridSize = 15;
         private const float TileScale = 0.2f;
         private const float IsometricYProjectionFactor = 0.8f; // User adjusted value for flatness
 
-        private static readonly string[,] TileLayout = new string[GridSize, GridSize]
-        {
-            { "water", "water", "beach", "grass", "grass" },
-            { "water", "beach", "grass", "grass", "dirt" },
-            { "beach", "grass", "grass", "dirt", "dirt" },
-            { "grass", "grass", "dirt", "dirt", "water" },
-            { "grass", "dirt", "dirt", "water", "water" }
-        };
+        private static string[,] TileLayout = new string[GridSize, GridSize];
 
         // Character grid position
         private static int _characterGridR; // Row
@@ -218,6 +211,43 @@ namespace App
             GL.ClearColor(0.1f, 0.1f, 0.1f, 1.0f);
             GL.Enable(EnableCap.Blend);
             GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
+
+            // Generate TileLayout
+            for (int r = 0; r < GridSize; r++)
+            {
+                for (int c = 0; c < GridSize; c++)
+                {
+                    TileLayout[r, c] = "water"; // Default to water
+                }
+            }
+
+            int center = GridSize / 2;
+            int landRadius = GridSize / 3; // Approximate radius for the main landmass
+            int dirtRadius = landRadius + 1;
+            int beachRadius = landRadius + 2;
+
+            for (int r = 0; r < GridSize; r++)
+            {
+                for (int c = 0; c < GridSize; c++)
+                {
+                    double distFromCenter = Math.Sqrt(Math.Pow(r - center, 2) + Math.Pow(c - center, 2));
+
+                    if (distFromCenter <= landRadius)
+                    {
+                        TileLayout[r, c] = "grass";
+                    }
+                    else if (distFromCenter <= dirtRadius)
+                    {
+                        // Prefer dirt if not already grass (for smoother transitions if radii overlap)
+                        if (TileLayout[r,c] == "water") TileLayout[r, c] = "dirt";
+                    }
+                    else if (distFromCenter <= beachRadius)
+                    {
+                        // Prefer beach if still water
+                        if (TileLayout[r,c] == "water") TileLayout[r, c] = "beach";
+                    }
+                }
+            }
 
             _spriteVao = CreateSpriteQuad();
             _tileVao = CreateTileQuad(); 
