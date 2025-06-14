@@ -5,6 +5,9 @@ using OpenTK.Mathematics;
 using OpenTK.Windowing.GraphicsLibraryFramework;
 using StbImageSharp;
 using System.Diagnostics;
+using System.Collections.Generic;
+using System;
+using System.Linq;
 
 namespace App
 {
@@ -60,7 +63,7 @@ namespace App
         private static float offsetT = 0.0f;
 
         private static Vector2 characterPosition = Vector2.Zero;
-        private const float CharacterSpeed = 1.5f; // Will be replaced by tile-based movement
+        private const float CharacterSpeed = 1.5f;
         private const float CharacterScale = 0.2f;
 
         private static Stopwatch _timer = new Stopwatch();
@@ -68,30 +71,89 @@ namespace App
         private const double AnimationFps = 12.0;
         private const double TimePerFrame = 1.0 / AnimationFps;
 
-        // Grid and Tile Settings
         private static int _tileVao;
         private static int _tileVbo;
         private static int _waterTextureId;
         private static int _grassTextureId;
         private static int _dirtTextureId;
         private static int _beachTextureId;
+        private static int _roadEWTextureId;
+        private static int _roadNSTextureId;
+        private static int _endETextureId;
+        private static int _endNTextureId;
+        private static int _endSTextureId;
+        private static int _endWTextureId;
+        private static int _treeShortTextureId;
+        private static int _treeTallTextureId;
+        private static int _keyTextureId;
+        private static int _chestClosedTextureId;
+        private static int _chestOpenTextureId;
         private const int GridSize = 15;
         private const float TileScale = 0.2f;
-        private const float IsometricYProjectionFactor = 0.8f; // User adjusted value for flatness
+        private const float IsometricYProjectionFactor = 0.8f;
 
         private static string[,] TileLayout = new string[GridSize, GridSize];
 
-        // Character grid position
-        private static int _characterGridR; // Row
-        private static int _characterGridC; // Column
+        private static int _characterGridR;
+        private static int _characterGridC;
 
-        // Movement timing and input latching
         private static double _timeSinceLastMove = 0.0;
-        private const double MoveCooldown = 1; // User set to 1 second
+        private const double MoveCooldown = 1;
         private static int _intended_dr_grid = 0;
         private static int _intended_dc_grid = 0;
         private static int _intendedAnimationTarget = 0;
         private static bool _hasIntendedMove = false;
+
+        public class Tree
+        {
+            public int R { get; }
+            public int C { get; }
+            public string Type { get; }
+            public int TextureId { get; }
+
+            public Tree(int r, int c, string type, int textureId)
+            {
+                R = r;
+                C = c;
+                Type = type;
+                TextureId = textureId;
+            }
+        }
+        private static List<Tree> _trees = new List<Tree>();
+        private const float TreeShortScale = 0.15f;
+        private const float TreeTallScale = 0.2f;
+
+        private struct TreeDefinition { public int R, C; public string Type; public TreeDefinition(int r, int c, string type) { R=r; C=c; Type=type; }}
+        private static List<TreeDefinition> _treeDefinitions = new List<TreeDefinition>
+        {
+            new TreeDefinition(5, 4, "tall"), new TreeDefinition(5, 5, "short"), new TreeDefinition(5, 6, "tall"),
+            new TreeDefinition(6, 3, "short"),
+            new TreeDefinition(4, 5, "tall"),
+
+            new TreeDefinition(4, 9, "tall"), new TreeDefinition(5, 9, "short"), new TreeDefinition(6, 9, "tall"),
+            new TreeDefinition(5, 11, "short"),
+            new TreeDefinition(3, 10, "tall"),
+
+            new TreeDefinition(9, 3, "tall"), new TreeDefinition(9, 4, "short"), new TreeDefinition(9, 5, "tall"),
+            new TreeDefinition(10, 2, "short"),
+            new TreeDefinition(8, 2, "tall"),
+
+            new TreeDefinition(8, 10, "tall"), new TreeDefinition(9, 10, "short"), new TreeDefinition(10, 10, "tall"),
+            new TreeDefinition(9, 12, "short"),
+            new TreeDefinition(11, 9, "tall")
+        };
+
+        private static int _keyGridR;
+        private static int _keyGridC;
+        private static bool _keyCollected = false;
+        private const float KeyScale = 0.1f;
+
+        private static int _chestGridR;
+        private static int _chestGridC;
+        private static bool _chestIsOpen = false;
+        private const float ChestScale = 0.18f;
+        private static bool _playerHasKey = false;
+        private static bool _gameOver = false;
 
         static void Main()
         {
@@ -147,24 +209,19 @@ namespace App
         private static int CreateTileQuad()
         {
             float[] vertices = {
-                // Positions          Texture Coords
-                -0.5f,  0.25f, 0.0f,  0.0f, 1.0f, // Top-Center
-                 0.0f,  0.5f,  0.0f,  0.5f, 0.0f, // Right-Center
-                 0.5f,  0.25f, 0.0f,  1.0f, 1.0f, // Bottom-Center
-                 0.0f,  0.0f,  0.0f,  0.5f, 1.0f  // Left-Center
+                -0.5f,  0.25f, 0.0f,  0.0f, 1.0f,
+                 0.0f,  0.5f,  0.0f,  0.5f, 0.0f,
+                 0.5f,  0.25f, 0.0f,  1.0f, 1.0f,
+                 0.0f,  0.0f,  0.0f,  0.5f, 1.0f
             };
-            // Convert diamond to quad for texturing
-            // For simplicity, we'll use a simple quad that fits the diamond for now
-            // Adjust texture coordinates if needed for diamond shape
              float[] quadVertices = {
-                // Positions          Texture Coords
-                -0.5f,  0.5f, 0.0f,   0.0f, 1.0f, // Top-left
-                -0.5f, -0.5f, 0.0f,   0.0f, 0.0f, // Bottom-left
-                 0.5f, -0.5f, 0.0f,   1.0f, 0.0f, // Bottom-right
+                -0.5f,  0.5f, 0.0f,   0.0f, 1.0f,
+                -0.5f, -0.5f, 0.0f,   0.0f, 0.0f,
+                 0.5f, -0.5f, 0.0f,   1.0f, 0.0f,
 
-                -0.5f,  0.5f, 0.0f,   0.0f, 1.0f, // Top-left
-                 0.5f, -0.5f, 0.0f,   1.0f, 0.0f, // Bottom-right
-                 0.5f,  0.5f, 0.0f,   1.0f, 1.0f  // Top-right
+                -0.5f,  0.5f, 0.0f,   0.0f, 1.0f,
+                 0.5f, -0.5f, 0.0f,   1.0f, 0.0f,
+                 0.5f,  0.5f, 0.0f,   1.0f, 1.0f
             };
 
 
@@ -196,7 +253,7 @@ namespace App
             float gridCenterXOffset = (centerCol - centerRow) * tileWidthScreen / 2.0f;
             float gridCenterYOffset = (centerCol + centerRow) * effectiveTileHeightForPos / 2.0f;
 
-            float s_coord = r + c; // Sum of grid coordinates for Y positioning
+            float s_coord = r + c;
             float isoX_uncorrected = (c - r) * tileWidthScreen / 2.0f;
             float isoY_uncorrected = s_coord * effectiveTileHeightForPos / 2.0f;
 
@@ -212,17 +269,16 @@ namespace App
             GL.Enable(EnableCap.Blend);
             GL.BlendFunc(BlendingFactor.SrcAlpha, BlendingFactor.OneMinusSrcAlpha);
 
-            // Generate TileLayout
             for (int r = 0; r < GridSize; r++)
             {
                 for (int c = 0; c < GridSize; c++)
                 {
-                    TileLayout[r, c] = "water"; // Default to water
+                    TileLayout[r, c] = "water";
                 }
             }
 
             int center = GridSize / 2;
-            int landRadius = GridSize / 3; // Approximate radius for the main landmass
+            int landRadius = GridSize / 3; 
             int dirtRadius = landRadius + 1;
             int beachRadius = landRadius + 2;
 
@@ -238,15 +294,95 @@ namespace App
                     }
                     else if (distFromCenter <= dirtRadius)
                     {
-                        // Prefer dirt if not already grass (for smoother transitions if radii overlap)
                         if (TileLayout[r,c] == "water") TileLayout[r, c] = "dirt";
                     }
                     else if (distFromCenter <= beachRadius)
                     {
-                        // Prefer beach if still water
                         if (TileLayout[r,c] == "water") TileLayout[r, c] = "beach";
                     }
                 }
+            }
+
+            int roadRow = GridSize / 2;
+            int min_land_col_on_row = -1;
+            int max_land_col_on_row = -1;
+
+            for (int c = 0; c < GridSize; c++)
+            {
+                if (TileLayout[roadRow, c] == "grass" || TileLayout[roadRow, c] == "dirt")
+                {
+                    if (min_land_col_on_row == -1)
+                    {
+                        min_land_col_on_row = c;
+                    }
+                    max_land_col_on_row = c;
+                }
+            }
+
+            int road_actual_start_col = -1;
+            int road_actual_end_col = -1;
+
+            if (min_land_col_on_row != -1 && max_land_col_on_row >= min_land_col_on_row)
+            {
+                road_actual_start_col = min_land_col_on_row + 1;
+                road_actual_end_col = max_land_col_on_row - 4; 
+
+                if (road_actual_start_col <= road_actual_end_col) 
+                {
+                    if (road_actual_start_col == road_actual_end_col) 
+                    {
+                        TileLayout[roadRow, road_actual_start_col] = "roadEW";
+                    }
+                    else 
+                    {
+                        TileLayout[roadRow, road_actual_start_col] = "endE"; 
+                        TileLayout[roadRow, road_actual_end_col] = "endW";   
+
+                        for (int c_road = road_actual_start_col + 1; c_road < road_actual_end_col; c_road++)
+                        {
+                            TileLayout[roadRow, c_road] = "roadEW"; 
+                        }
+                    }
+                }
+                else
+                {
+                    road_actual_start_col = -1;
+                    road_actual_end_col = -1;
+                }
+            }
+
+            List<Tuple<int, int>> riverWaypoints = new List<Tuple<int, int>>();
+            if (road_actual_start_col != -1 && road_actual_end_col != -1 && road_actual_start_col <= road_actual_end_col)
+            {
+                int roadCrossingPointR = roadRow;
+                int roadCrossingPointC = road_actual_start_col + ((road_actual_end_col - road_actual_start_col + 1) / 2);
+
+                riverWaypoints.Add(Tuple.Create(0, roadCrossingPointC - 3));
+                riverWaypoints.Add(Tuple.Create(2, roadCrossingPointC - 2));
+                riverWaypoints.Add(Tuple.Create(4, roadCrossingPointC - 2));
+                riverWaypoints.Add(Tuple.Create(roadCrossingPointR - 1, roadCrossingPointC -1));
+                riverWaypoints.Add(Tuple.Create(roadCrossingPointR, roadCrossingPointC));
+                riverWaypoints.Add(Tuple.Create(roadCrossingPointR + 1, roadCrossingPointC + 1));
+                riverWaypoints.Add(Tuple.Create(roadCrossingPointR + 3, roadCrossingPointC + 1));
+                riverWaypoints.Add(Tuple.Create(GridSize - 3, roadCrossingPointC + 2));
+                riverWaypoints.Add(Tuple.Create(GridSize - 1, roadCrossingPointC + 3));
+            }
+            else
+            {
+                int centerC = GridSize / 2;
+                riverWaypoints.Add(Tuple.Create(0, centerC - 2));
+                riverWaypoints.Add(Tuple.Create(3, centerC - 1));
+                riverWaypoints.Add(Tuple.Create(6, centerC -1));
+                riverWaypoints.Add(Tuple.Create(GridSize / 2, centerC));
+                riverWaypoints.Add(Tuple.Create(GridSize / 2 + 2, centerC + 1));
+                riverWaypoints.Add(Tuple.Create(GridSize - 3, centerC + 2));
+                riverWaypoints.Add(Tuple.Create(GridSize - 1, centerC + 2));
+            }
+            CarveRiverPath(riverWaypoints);
+
+            if (GridSize > 10 && GridSize > 7)
+            {
+                TileLayout[10, 7] = "grass"; 
             }
 
             _spriteVao = CreateSpriteQuad();
@@ -260,6 +396,17 @@ namespace App
                 _grassTextureId = TextureLoader.LoadTexture("tileset/grass.png");
                 _dirtTextureId = TextureLoader.LoadTexture("tileset/dirt.png");
                 _beachTextureId = TextureLoader.LoadTexture("tileset/beach.png");
+                _roadEWTextureId = TextureLoader.LoadTexture("tileset/roadEW.png");
+                _roadNSTextureId = TextureLoader.LoadTexture("tileset/roadNS.png");
+                _endETextureId = TextureLoader.LoadTexture("tileset/endE.png");
+                _endNTextureId = TextureLoader.LoadTexture("tileset/endN.png");
+                _endSTextureId = TextureLoader.LoadTexture("tileset/endS.png");
+                _endWTextureId = TextureLoader.LoadTexture("tileset/endW.png");
+                _treeShortTextureId = TextureLoader.LoadTexture("tileset/treeShort.png");
+                _treeTallTextureId = TextureLoader.LoadTexture("tileset/treeTall.png");
+                _keyTextureId = TextureLoader.LoadTexture("tileset/key.png");
+                _chestClosedTextureId = TextureLoader.LoadTexture("tileset/chestclosed.png");
+                _chestOpenTextureId = TextureLoader.LoadTexture("tileset/chestopen.png");
             }
             catch (FileNotFoundException ex)
             {
@@ -274,15 +421,36 @@ namespace App
                 return;
             }
 
-            // Initialize character grid position to the center
+            foreach (var def in _treeDefinitions)
+            {
+                if (def.R >= 0 && def.R < GridSize && def.C >= 0 && def.C < GridSize)
+                {
+                    string tileType = TileLayout[def.R, def.C];
+                    if (tileType == "grass" || tileType == "dirt")
+                    {
+                        int texID = (def.Type == "short") ? _treeShortTextureId : _treeTallTextureId;
+                        _trees.Add(new Tree(def.R, def.C, def.Type, texID));
+                    }
+                }
+            }
+
             _characterGridR = GridSize / 2;
             _characterGridC = GridSize / 2;
             characterPosition = GetWorldPositionForGridCoordinates(_characterGridR, _characterGridC);
             
-            // Start character facing down (idle)
             currentAnimation = 3; 
             _intendedAnimationTarget = 3; 
             currentFrame = 0;
+
+            _keyGridR = 11;
+            _keyGridC = 4;
+            _keyCollected = false;
+
+            _chestGridR = 4;
+            _chestGridC = 10;
+            _chestIsOpen = false;
+            
+            _playerHasKey = false;
 
             _timer.Start();
         }
@@ -293,7 +461,7 @@ namespace App
 
             GL.BindBuffer(BufferTarget.ArrayBuffer, 0);
             GL.DeleteBuffer(_spriteVbo);
-            GL.DeleteBuffer(_tileVbo); // Delete tile VBO
+            GL.DeleteBuffer(_tileVbo);
 
             GL.UseProgram(0);
             GL.DeleteProgram(_shaderProgram);
@@ -303,9 +471,20 @@ namespace App
             GL.DeleteTexture(_grassTextureId);
             GL.DeleteTexture(_dirtTextureId);
             GL.DeleteTexture(_beachTextureId);
+            GL.DeleteTexture(_roadEWTextureId);
+            GL.DeleteTexture(_roadNSTextureId);
+            GL.DeleteTexture(_endETextureId);
+            GL.DeleteTexture(_endNTextureId);
+            GL.DeleteTexture(_endSTextureId);
+            GL.DeleteTexture(_endWTextureId);
+            GL.DeleteTexture(_treeShortTextureId);
+            GL.DeleteTexture(_treeTallTextureId);
+            GL.DeleteTexture(_keyTextureId);
+            GL.DeleteTexture(_chestClosedTextureId);
+            GL.DeleteTexture(_chestOpenTextureId);
 
             GL.DeleteVertexArray(_spriteVao);
-            GL.DeleteVertexArray(_tileVao); // Delete tile VAO
+            GL.DeleteVertexArray(_tileVao);
         }
 
         static void SetupShaders()
@@ -373,6 +552,11 @@ namespace App
                 return;
             }
 
+            if (_gameOver) 
+            {
+                return; 
+            }
+
             int frame_dr_grid = 0; 
             int frame_dc_grid = 0; 
             int frame_animationTarget = currentAnimation; 
@@ -383,14 +567,14 @@ namespace App
             bool keyA = keyboard.IsKeyDown(Keys.A) || keyboard.IsKeyDown(Keys.Left);
             bool keyD = keyboard.IsKeyDown(Keys.D) || keyboard.IsKeyDown(Keys.Right);
 
-            if (keyW && keyA) { frame_inputProcessed = true; frame_dr_grid = 1; frame_dc_grid = 0; frame_animationTarget = 0; }    // Visual UP-LEFT (NW) -> Grid S, Anim N
-            else if (keyW && keyD) { frame_inputProcessed = true; frame_dr_grid = 0; frame_dc_grid = 1; frame_animationTarget = 0; } // Visual UP-RIGHT (NE) -> Grid E, Anim N
-            else if (keyS && keyA) { frame_inputProcessed = true; frame_dr_grid = 0; frame_dc_grid = -1; frame_animationTarget = 3; } // Visual DOWN-LEFT (SW) -> Grid W, Anim S
-            else if (keyS && keyD) { frame_inputProcessed = true; frame_dr_grid = -1; frame_dc_grid = 0; frame_animationTarget = 3; } // Visual DOWN-RIGHT (SE) -> Grid N, Anim S
-            else if (keyW) { frame_inputProcessed = true; frame_dr_grid = 1; frame_dc_grid = 1; frame_animationTarget = 0; }      // Visual PURE UP -> Grid SE, Anim N
-            else if (keyS) { frame_inputProcessed = true; frame_dr_grid = -1; frame_dc_grid = -1; frame_animationTarget = 3; }   // Visual PURE DOWN -> Grid NW, Anim S
-            else if (keyA) { frame_inputProcessed = true; frame_dr_grid = 1; frame_dc_grid = -1; frame_animationTarget = 2; }    // Visual PURE LEFT -> Grid SW, Anim Right (flipped)
-            else if (keyD) { frame_inputProcessed = true; frame_dr_grid = -1; frame_dc_grid = 1; frame_animationTarget = 1; }    // Visual PURE RIGHT -> Grid NE, Anim Left (flipped)
+            if (keyW && keyA) { frame_inputProcessed = true; frame_dr_grid = 1; frame_dc_grid = 0; frame_animationTarget = 0; }
+            else if (keyW && keyD) { frame_inputProcessed = true; frame_dr_grid = 0; frame_dc_grid = 1; frame_animationTarget = 0; }
+            else if (keyS && keyA) { frame_inputProcessed = true; frame_dr_grid = 0; frame_dc_grid = -1; frame_animationTarget = 3; }
+            else if (keyS && keyD) { frame_inputProcessed = true; frame_dr_grid = -1; frame_dc_grid = 0; frame_animationTarget = 3; }
+            else if (keyW) { frame_inputProcessed = true; frame_dr_grid = 1; frame_dc_grid = 1; frame_animationTarget = 0; }
+            else if (keyS) { frame_inputProcessed = true; frame_dr_grid = -1; frame_dc_grid = -1; frame_animationTarget = 3; }
+            else if (keyA) { frame_inputProcessed = true; frame_dr_grid = 1; frame_dc_grid = -1; frame_animationTarget = 2; }
+            else if (keyD) { frame_inputProcessed = true; frame_dr_grid = -1; frame_dc_grid = 1; frame_animationTarget = 1; }
             
             if (frame_inputProcessed)
             {
@@ -398,7 +582,6 @@ namespace App
                 _intended_dc_grid = frame_dc_grid;
                 _intendedAnimationTarget = frame_animationTarget;
                 _hasIntendedMove = true;
-                // currentAnimation will be updated in the animation logic section
             }
             else
             {
@@ -416,13 +599,42 @@ namespace App
 
                     if (nextR >= 0 && nextR < GridSize && nextC >= 0 && nextC < GridSize)
                     {
-                        if (TileLayout[nextR, nextC] != "water")
+                        string targetTileType = TileLayout[nextR, nextC];
+                        bool isTreeBlocking = _trees.Any(tree => tree.R == nextR && tree.C == nextC);
+
+                        if (targetTileType != "water" && !isTreeBlocking) 
                         {
                             _characterGridR = nextR;
                             _characterGridC = nextC;
                             characterPosition = GetWorldPositionForGridCoordinates(_characterGridR, _characterGridC);
-                            characterMovedThisFrame = true; // Critical: set this flag
+                            characterMovedThisFrame = true; 
                             _timeSinceLastMove = 0.0; 
+
+                            if (!_keyCollected && _characterGridR == _keyGridR && _characterGridC == _keyGridC)
+                            {
+                                _keyCollected = true;
+                                _playerHasKey = true;
+                                Console.WriteLine("Key collected!");
+                            }
+
+                            if (_characterGridR == _chestGridR && _characterGridC == _chestGridC)
+                            {
+                                if (_playerHasKey && !_chestIsOpen)
+                                {
+                                    _chestIsOpen = true;
+                                    Console.WriteLine("Chest opened!");
+                                    _gameWindowRef.Title = "Voce abriu o bau! game over.";
+                                    _gameOver = true;
+                                }
+                                else if (_chestIsOpen)
+                                {
+                                    Console.WriteLine("Chest is already open.");
+                                }
+                                else if (!_playerHasKey)
+                                {
+                                    Console.WriteLine("Chest is locked. You need a key!");
+                                }
+                            }
                         }
                     }
                 }
@@ -432,7 +644,7 @@ namespace App
 
             if (characterMovedThisFrame) { 
                 currentFrame = 0; 
-                currentAnimation = _intendedAnimationTarget; // Ensure animation matches move direction
+                currentAnimation = _intendedAnimationTarget; 
             }
 
             if (_hasIntendedMove) { 
@@ -454,7 +666,10 @@ namespace App
             offsetS = (float)currentFrame * ds;
             offsetT = (float)currentAnimation * dt; 
             
-            _gameWindowRef.Title = $"Grid:({_characterGridC},{_characterGridR}) Anim:{currentAnimation} Frame:{currentFrame} Pos:({characterPosition.X:F2},{characterPosition.Y:F2})";
+            if (!_gameOver)
+            {
+                _gameWindowRef.Title = $"Grid:({_characterGridC},{_characterGridR}) Anim:{currentAnimation} Frame:{currentFrame} Pos:({characterPosition.X:F2},{characterPosition.Y:F2})";
+            }
         }
 
         static void OnRenderFrame(FrameEventArgs args)
@@ -463,16 +678,16 @@ namespace App
 
             GL.UseProgram(_shaderProgram);
 
-            GL.BindVertexArray(_tileVao);
             int posLoc = GL.GetUniformLocation(_shaderProgram, "uPositionOffset");
             int scaleLoc = GL.GetUniformLocation(_shaderProgram, "uScale");
             int texOffsetLoc = GL.GetUniformLocation(_shaderProgram, "uTexOffset"); 
 
+            GL.BindVertexArray(_tileVao);
             GL.Uniform2(scaleLoc, new Vector2(TileScale, TileScale));
             GL.Uniform2(texOffsetLoc, Vector2.Zero); 
 
             float tileWidthScreen = TileScale; 
-            float effectiveTileHeightForPos = TileScale * IsometricYProjectionFactor; // Use the class constant
+            float effectiveTileHeightForPos = TileScale * IsometricYProjectionFactor; 
 
             int centerRow = GridSize / 2;
             int centerCol = GridSize / 2;
@@ -503,6 +718,13 @@ namespace App
                         case "grass": currentTileTextureId = _grassTextureId; break;
                         case "beach": currentTileTextureId = _beachTextureId; break;
                         case "dirt": currentTileTextureId = _dirtTextureId; break;
+                        case "roadEW": currentTileTextureId = _roadEWTextureId; break;
+                        case "roadNS": currentTileTextureId = _roadNSTextureId; break;
+                        case "endE": currentTileTextureId = _endETextureId; break;
+                        case "endN": currentTileTextureId = _endNTextureId; break;
+                        case "endS": currentTileTextureId = _endSTextureId; break;
+                        case "endW": currentTileTextureId = _endWTextureId; break;
+                        default: currentTileTextureId = _dirtTextureId; break; 
                     }
                     GL.ActiveTexture(TextureUnit.Texture0);
                     GL.BindTexture(TextureTarget.Texture2D, currentTileTextureId);
@@ -510,14 +732,57 @@ namespace App
                 }
             }
 
+            var sortedTrees = _trees.OrderBy(t => t.R + t.C).ToList();
+            GL.BindVertexArray(_tileVao);
+            GL.Uniform2(texOffsetLoc, Vector2.Zero);
+
+            foreach (var tree in sortedTrees)
+            {
+                GL.ActiveTexture(TextureUnit.Texture0);
+                GL.BindTexture(TextureTarget.Texture2D, tree.TextureId);
+
+                Vector2 tileCenterPos = GetWorldPositionForGridCoordinates(tree.R, tree.C);
+                float treeScaleValue = (tree.Type == "short") ? TreeShortScale : TreeTallScale;
+                
+                Vector2 treeRenderPos = new Vector2(tileCenterPos.X, tileCenterPos.Y + 0.5f * treeScaleValue);
+                
+                GL.Uniform2(posLoc, treeRenderPos);
+                GL.Uniform2(scaleLoc, new Vector2(treeScaleValue * 0.25f, treeScaleValue)); 
+
+                GL.DrawArrays(PrimitiveType.Triangles, 0, 6);
+            }
+
+            if (!_keyCollected)
+            {
+                GL.BindVertexArray(_tileVao);
+                GL.ActiveTexture(TextureUnit.Texture0);
+                GL.BindTexture(TextureTarget.Texture2D, _keyTextureId);
+
+                Vector2 keyTileCenterPos = GetWorldPositionForGridCoordinates(_keyGridR, _keyGridC);
+                Vector2 keyRenderPos = new Vector2(keyTileCenterPos.X, keyTileCenterPos.Y + 0.5f * KeyScale * 0.5f);
+
+                GL.Uniform2(posLoc, keyRenderPos);
+                GL.Uniform2(scaleLoc, new Vector2(KeyScale, KeyScale));
+                GL.Uniform2(texOffsetLoc, Vector2.Zero);
+                GL.DrawArrays(PrimitiveType.Triangles, 0, 6);
+            }
+
+            GL.BindVertexArray(_tileVao);
+            GL.ActiveTexture(TextureUnit.Texture0);
+            GL.BindTexture(TextureTarget.Texture2D, _chestIsOpen ? _chestOpenTextureId : _chestClosedTextureId);
+            
+            Vector2 chestTileCenterPos = GetWorldPositionForGridCoordinates(_chestGridR, _chestGridC);
+            Vector2 chestRenderPos = new Vector2(chestTileCenterPos.X, chestTileCenterPos.Y + 0.5f * ChestScale * 0.5f);
+
+            GL.Uniform2(posLoc, chestRenderPos);
+            GL.Uniform2(scaleLoc, new Vector2(ChestScale, ChestScale));
+            GL.Uniform2(texOffsetLoc, Vector2.Zero);
+            GL.DrawArrays(PrimitiveType.Triangles, 0, 6);
+
             GL.BindVertexArray(_spriteVao);
             GL.ActiveTexture(TextureUnit.Texture0);
             GL.BindTexture(TextureTarget.Texture2D, _spriteTextureId);
-
-            posLoc = GL.GetUniformLocation(_shaderProgram, "uPositionOffset"); 
-            scaleLoc = GL.GetUniformLocation(_shaderProgram, "uScale");
-            texOffsetLoc = GL.GetUniformLocation(_shaderProgram, "uTexOffset");
-
+            
             GL.Uniform2(posLoc, characterPosition); 
             GL.Uniform2(scaleLoc, new Vector2(CharacterScale, CharacterScale));
             GL.Uniform2(texOffsetLoc, new Vector2(offsetS, offsetT));
@@ -548,6 +813,50 @@ namespace App
             {
                 string infoLog = GL.GetProgramInfoLog(program);
                 Console.WriteLine($"Program linking error: {infoLog}");
+            }
+        }
+
+        private static void SetTileToWater(int r, int c)
+        {
+            if (r >= 0 && r < GridSize && c >= 0 && c < GridSize)
+            {
+                TileLayout[r, c] = "water";
+            }
+        }
+
+        private static void DrawRiverSegmentBetween(int r1, int c1, int r2, int c2)
+        {
+            int curR = r1;
+            int curC = c1;
+
+            SetTileToWater(curR, curC);
+
+            while (curR != r2 || curC != c2)
+            {
+                int dr = Math.Sign(r2 - curR);
+                int dc = Math.Sign(c2 - curC);
+
+                if (curR != r2)
+                {
+                    curR += dr;
+                }
+                else if (curC != c2)
+                {
+                    curC += dc;
+                }
+                SetTileToWater(curR, curC);
+            }
+        }
+
+        private static void CarveRiverPath(List<Tuple<int, int>> waypoints)
+        {
+            if (waypoints == null || waypoints.Count < 2) return;
+
+            for (int i = 0; i < waypoints.Count - 1; i++)
+            {
+                Tuple<int, int> start = waypoints[i];
+                Tuple<int, int> end = waypoints[i + 1];
+                DrawRiverSegmentBetween(start.Item1, start.Item2, end.Item1, end.Item2);
             }
         }
     }
