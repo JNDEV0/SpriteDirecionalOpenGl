@@ -5,46 +5,14 @@ using OpenTK.Mathematics;
 using OpenTK.Windowing.GraphicsLibraryFramework;
 using StbImageSharp;
 using System.Diagnostics;
-using System.Collections.Generic;
-using System;
-using System.Linq;
 
 namespace App
 {
-    static class TextureLoader
-    {
-        public static int LoadTexture(string path)
-        {
-            if (!File.Exists(path))
-            {
-                throw new FileNotFoundException("programa sem acesso ao spritesheet", path);
-            }
 
-            int handle = GL.GenTexture();
-            GL.ActiveTexture(TextureUnit.Texture0);
-            GL.BindTexture(TextureTarget.Texture2D, handle);
-
-            StbImage.stbi_set_flip_vertically_on_load(1);
-            using (Stream stream = File.OpenRead(path))
-            {
-                ImageResult image = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
-
-                GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, image.Width, image.Height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, image.Data);
-            }
-
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.Repeat);
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.Repeat);
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Nearest);
-            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Nearest);
-
-            GL.BindTexture(TextureTarget.Texture2D, 0);
-
-            return handle;
-        }
-    }
 
     static class Program
     {
+        #region variables
         private static int _spriteVao;
         private static int _spriteVbo;
         private static int _shaderProgram;
@@ -63,7 +31,6 @@ namespace App
         private static float offsetT = 0.0f;
 
         private static Vector2 characterPosition = Vector2.Zero;
-        private const float CharacterSpeed = 1.5f;
         private const float CharacterScale = 0.2f;
 
         private static Stopwatch _timer = new Stopwatch();
@@ -154,13 +121,13 @@ namespace App
         private const float ChestScale = 0.18f;
         private static bool _playerHasKey = false;
         private static bool _gameOver = false;
+        #endregion
 
         static void Main()
         {
             GameWindowSettings gameWindowSettings = new GameWindowSettings();
             NativeWindowSettings nativeWindowSettings = new NativeWindowSettings();
-            nativeWindowSettings.Size = new Vector2i(800, 600);
-            nativeWindowSettings.Title = "M5 animacao sprite";
+            nativeWindowSettings.ClientSize = new Vector2i(800, 600);
             nativeWindowSettings.Flags = ContextFlags.ForwardCompatible;
 
             GameWindow gameWindow = new GameWindow(gameWindowSettings, nativeWindowSettings);
@@ -174,6 +141,7 @@ namespace App
             gameWindow.Run();
         }
 
+        #region gridtiles
         private static int CreateSpriteQuad()
         {
             float[] vertices = {
@@ -208,13 +176,7 @@ namespace App
 
         private static int CreateTileQuad()
         {
-            float[] vertices = {
-                -0.5f,  0.25f, 0.0f,  0.0f, 1.0f,
-                 0.0f,  0.5f,  0.0f,  0.5f, 0.0f,
-                 0.5f,  0.25f, 0.0f,  1.0f, 1.0f,
-                 0.0f,  0.0f,  0.0f,  0.5f, 1.0f
-            };
-             float[] quadVertices = {
+            float[] quadVertices = {
                 -0.5f,  0.5f, 0.0f,   0.0f, 1.0f,
                 -0.5f, -0.5f, 0.0f,   0.0f, 0.0f,
                  0.5f, -0.5f, 0.0f,   1.0f, 0.0f,
@@ -223,7 +185,6 @@ namespace App
                  0.5f, -0.5f, 0.0f,   1.0f, 0.0f,
                  0.5f,  0.5f, 0.0f,   1.0f, 1.0f
             };
-
 
             int vao = GL.GenVertexArray();
             GL.BindVertexArray(vao);
@@ -262,7 +223,9 @@ namespace App
 
             return new Vector2(finalX, finalY);
         }
+        #endregion
 
+        #region shaders
         static void OnLoad()
         {
             GL.ClearColor(0.1f, 0.1f, 0.1f, 1.0f);
@@ -410,13 +373,11 @@ namespace App
             }
             catch (FileNotFoundException ex)
             {
-                Console.WriteLine($"Error loading texture: {ex.Message} Path: {ex.FileName}");
                 _gameWindowRef?.Close();
                 return;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"An unexpected error occurred during texture loading: {ex.ToString()}");
                 _gameWindowRef?.Close();
                 return;
             }
@@ -614,7 +575,6 @@ namespace App
                             {
                                 _keyCollected = true;
                                 _playerHasKey = true;
-                                Console.WriteLine("Key collected!");
                             }
 
                             if (_characterGridR == _chestGridR && _characterGridC == _chestGridC)
@@ -622,17 +582,8 @@ namespace App
                                 if (_playerHasKey && !_chestIsOpen)
                                 {
                                     _chestIsOpen = true;
-                                    Console.WriteLine("Chest opened!");
                                     _gameWindowRef.Title = "Voce abriu o bau! game over.";
                                     _gameOver = true;
-                                }
-                                else if (_chestIsOpen)
-                                {
-                                    Console.WriteLine("Chest is already open.");
-                                }
-                                else if (!_playerHasKey)
-                                {
-                                    Console.WriteLine("Chest is locked. You need a key!");
                                 }
                             }
                         }
@@ -802,7 +753,6 @@ namespace App
             if (success == 0)
             {
                 string infoLog = GL.GetShaderInfoLog(shader);
-                Console.WriteLine($"Shader compilation error: {infoLog}");
             }
         }
 
@@ -812,10 +762,11 @@ namespace App
             if (success == 0)
             {
                 string infoLog = GL.GetProgramInfoLog(program);
-                Console.WriteLine($"Program linking error: {infoLog}");
             }
         }
+        #endregion
 
+        #region drawriver
         private static void SetTileToWater(int r, int c)
         {
             if (r >= 0 && r < GridSize && c >= 0 && c < GridSize)
@@ -858,6 +809,39 @@ namespace App
                 Tuple<int, int> end = waypoints[i + 1];
                 DrawRiverSegmentBetween(start.Item1, start.Item2, end.Item1, end.Item2);
             }
+        }
+        #endregion
+    }
+
+    static class TextureLoader
+    {
+        public static int LoadTexture(string path)
+        {
+            if (!File.Exists(path))
+            {
+                throw new FileNotFoundException("programa sem acesso ao spritesheet", path);
+            }
+
+            int handle = GL.GenTexture();
+            GL.ActiveTexture(TextureUnit.Texture0);
+            GL.BindTexture(TextureTarget.Texture2D, handle);
+
+            StbImage.stbi_set_flip_vertically_on_load(1);
+            using (Stream stream = File.OpenRead(path))
+            {
+                ImageResult image = ImageResult.FromStream(stream, ColorComponents.RedGreenBlueAlpha);
+
+                GL.TexImage2D(TextureTarget.Texture2D, 0, PixelInternalFormat.Rgba, image.Width, image.Height, 0, PixelFormat.Rgba, PixelType.UnsignedByte, image.Data);
+            }
+
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapS, (int)TextureWrapMode.Repeat);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureWrapT, (int)TextureWrapMode.Repeat);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMinFilter, (int)TextureMinFilter.Nearest);
+            GL.TexParameter(TextureTarget.Texture2D, TextureParameterName.TextureMagFilter, (int)TextureMagFilter.Nearest);
+
+            GL.BindTexture(TextureTarget.Texture2D, 0);
+
+            return handle;
         }
     }
 }
